@@ -23,7 +23,7 @@ bool run_command(const std::string& command, const std::string& args)
 	int success = CreateProcess(command.c_str(), cmd_line.data(), nullptr, nullptr, false, 0, nullptr, nullptr, &si, &pi);
 	if (!success)
 	{
-		std::cerr << "[!] Error: " << std::system_category().message(GetLastError()) << '\n';
+		std::cerr << "[!] Error creating process: " << std::system_category().message(GetLastError()) << '\n';
 		return false;
 	}
 
@@ -74,7 +74,7 @@ int main()
 	}
 
 	// grab all devices from the network adapter
-	const HDEVINFO device_info_set = SetupDiGetClassDevs(&GUID_DEVCLASS_NET, nullptr, nullptr, DIGCF_PRESENT);
+	const HDEVINFO device_info_set = SetupDiGetClassDevsW(&GUID_DEVCLASS_NET, nullptr, nullptr, DIGCF_PRESENT);
 
 	SP_DEVINFO_DATA device_info_data;
 	device_info_data.cbSize = sizeof(SP_DEVINFO_DATA);
@@ -89,10 +89,10 @@ int main()
 	{
 		DWORD data_type;
 		DWORD required_size;
-		BYTE buffer[1024];
+		BYTE buffer[4096];
 
 		// get the friendly name of the device
-		if (SetupDiGetDeviceRegistryProperty(device_info_set, &device_info_data, SPDRP_FRIENDLYNAME, &data_type, buffer,
+		if (SetupDiGetDeviceRegistryPropertyW(device_info_set, &device_info_data, SPDRP_FRIENDLYNAME, &data_type, buffer,
 		                                     sizeof(buffer), &required_size))
 		{
 			// ensure the buffer contains a null-terminated string
@@ -104,17 +104,37 @@ int main()
 				// remove the device
 				if (!SetupDiRemoveDevice(device_info_set, &device_info_data))
 				{
-					std::cerr << "[!] Error: " << std::system_category().message(GetLastError()) << '\n';
+					std::cerr << "[!] Error removing device: " << std::system_category().message(GetLastError()) << '\n';
 					continue;
 				}
 
-				std::wcout << "\n" << reinterpret_cast<wchar_t*>(buffer) << " was removed\n";
+				std::wcout << "\n" << reinterpret_cast<wchar_t*>(buffer) << " was removed";
+				wan_miniport_count++;
+			}
+		}
+		else if (SetupDiGetDeviceRegistryPropertyW(device_info_set, &device_info_data, SPDRP_DEVICEDESC, &data_type, buffer,
+			sizeof(buffer), &required_size))
+		{
+			// ensure the buffer contains a null-terminated string
+			buffer[sizeof(buffer) - 1] = 0;
+
+			// check if the device is a WAN miniport
+			if (wcsstr(reinterpret_cast<wchar_t*>(buffer), L"WAN Miniport"))
+			{
+				// remove the device
+				if (!SetupDiRemoveDevice(device_info_set, &device_info_data))
+				{
+					std::cerr << "[!] Error removing device: " << std::system_category().message(GetLastError()) << '\n';
+					continue;
+				}
+
+				std::wcout << "\n" << reinterpret_cast<wchar_t*>(buffer) << " was removed";
 				wan_miniport_count++;
 			}
 		}
 		else
 		{
-			std::cout << "[!] Error: " << std::system_category().message(GetLastError()) << '\n';
+			std::cout << "[!] Error getting device property: " << std::system_category().message(GetLastError()) << '\n';
 		}
 
 		member_index++;
